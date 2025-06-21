@@ -1,6 +1,8 @@
 import requests
 from datetime import datetime, timedelta
 from gridstatusio import GridStatusClient
+import pandas as pd
+from gridstatus import Ercot, SPP, NYISO, ISONE, IESO
 
 MINER_WTH = 100
 
@@ -105,7 +107,6 @@ def get_inference_competition_prices():
         'highest': max(prices.values())
     }
 
-
 def get_btc_hashprice():
     """Get current Bitcoin mining profitability (hashprice)"""
     try:
@@ -173,6 +174,110 @@ def calculate_hourly_mining_profit(lmp_per_mwh, hashprice_per_th_day, miner_effi
         'miner_watts_per_th': miner_efficiency_watts_per_th
     }
 
+# Carbon emissions factors in gCO2/MWh
+CARBON_FACTORS = {
+    "coal": 1001,
+    "natural gas": 469,
+    "oil": 840,
+    "nuclear": 0,
+    "wind": 0,
+    "solar": 0,
+    "hydro": 0,
+    "battery": 0,
+    "other": 300,
+}
+
+def get_carbon_intensity_by_iso():
+    """Fetch current carbon intensity for each ISO"""
+    print("Fetching carbon intensity data from ISOs...")
+    
+    isos = {
+        "ercot": Ercot(),
+        "spp": SPP(),
+        "nyiso": NYISO(),
+        "isone": ISONE(),
+        "ieso": IESO()
+    }
+    
+    carbon_intensities = {}
+    
+    for region_key, iso in isos.items():
+        try:
+            # Get today's fuel mix
+            today = datetime.now().date()
+            df = iso.get_fuel_mix(date=today)
+            
+            if df is not None and not df.empty:
+                # Get the most recent data
+                latest_row = df.iloc[-1]
+                
+                # Calculate total generation and emissions
+                total_gen = 0
+                total_emissions = 0
+                
+                for col in df.columns:
+                    if col not in ['Time', 'time', 'datetime', 'interval_start', 'interval_end']:
+                        fuel_type = col.lower()
+                        value = float(latest_row[col]) if pd.notna(latest_row[col]) else 0
+                        
+                        # Map fuel type to carbon factor
+                        emission_factor = CARBON_FACTORS.get(fuel_type, 300)
+                        
+                        total_gen += value
+                        total_emissions += emission_factor * value
+                
+                # Calculate carbon intensity (gCO2/MWh)
+                carbon_intensity = round(total_emissions / total_gen, 2) if total_gen > 0 else 0
+                carbon_intensities[region_key] = carbon_intensity
+                print(f"  {region_key.upper()}: {carbon_intensity} gCO2/MWh")
+            else:
+                carbon_intensities[region_key] = None
+                print(f"  {region_key.upper()}: No data available")
+                
+        except Exception as e:
+            print(f"  Error fetching {region_key}: {str(e)}")
+            carbon_intensities[region_key] = None
+    
+    # Add estimates for CAISO, MISO, PJM (not available via gridstatus)
+    carbon_intensities['caiso'] = 250  # California typically cleaner
+    carbon_intensities['miso'] = 600   # Mixed coal/gas
+    carbon_intensities['pjm'] = 550    # Mixed coal/gas/nuclear
+    
+    return carbon_intensities
+
+def calculate_profit_per_carbon_intensity(lmp_data, btc_hashprice, carbon_intensities):
+    """Calculate profit per carbon intensity for each ISO region"""
+    results = []
+    
+    for iso_name, iso_data in lmp_data.items():
+        if 'error' not in iso_data and 'average_lmp' in iso_data:
+            # Calculate mining profitability
+            profit = calculate_hourly_mining_profit(
+                iso_data['average_lmp'], 
+                btc_hashprice['hashprice_per_th_day']
+            )
+            
+            # Get carbon intensity
+            carbon_intensity = carbon_intensities.get(iso_name)
+            
+            if carbon_intensity and carbon_intensity > 0:
+                # Profit per unit of carbon ($/gCO2)
+                profit_per_carbon = profit['hourly_profit_per_th'] / carbon_intensity * 1000
+                
+                results.append({
+                    'iso': iso_name.upper(),
+                    'avg_lmp': iso_data['average_lmp'],
+                    'hourly_profit_per_th': profit['hourly_profit_per_th'],
+                    'carbon_intensity': carbon_intensity,
+                    'profit_per_carbon': profit_per_carbon,
+                    'profitable': profit['hourly_profit_per_th'] > 0
+                })
+    
+    # Sort by profit per carbon (descending)
+    results.sort(key=lambda x: x['profit_per_carbon'], reverse=True)
+    
+    return results
+
 # Quick test script
 if __name__ == "__main__":
     print("=== CHEAPEST ENERGY LOCATIONS BY ISO ===")
@@ -200,21 +305,35 @@ if __name__ == "__main__":
     print(f"BTC Price: ${btc['btc_price']:,.0f}")
     print(f"Hashprice: ${btc['hashprice_per_th_day']:.3f}/TH/day")
     
-    # Example: Calculate profitability for cheapest average region
-    print("\n=== MINING PROFITABILITY EXAMPLE ===")
-    # Find the ISO with the cheapest average LMP
-    cheapest_avg_lmp = float('inf')
-    cheapest_iso = None
-    for iso_name, iso_data in lmp_data.items():
-        if 'error' not in iso_data and 'average_lmp' in iso_data:
-            if iso_data['average_lmp'] < cheapest_avg_lmp:
-                cheapest_avg_lmp = iso_data['average_lmp']
-                cheapest_iso = iso_name
+    # Get carbon intensity data
+    print("\n=== CARBON INTENSITY BY ISO ===")
+    carbon_intensities = get_carbon_intensity_by_iso()
     
-    if cheapest_iso:
-        profit = calculate_hourly_mining_profit(cheapest_avg_lmp, btc['hashprice_per_th_day'])
-        print(f"Using cheapest average region: ${cheapest_avg_lmp}/MWh from {cheapest_iso.upper()}")
-        print(f"Hourly revenue per TH: ${profit['hourly_revenue_per_th']}")
-        print(f"Hourly electricity cost per TH: ${profit['hourly_electricity_cost_per_th']}")
-        print(f"Hourly profit per TH: ${profit['hourly_profit_per_th']}")
-        print(f"Profitable: {'Yes' if profit['hourly_profit_per_th'] > 0 else 'No'}") 
+    # Calculate profit per carbon intensity for all regions
+    print("\n=== MINING PROFIT PER CARBON INTENSITY ===")
+    profit_carbon_results = calculate_profit_per_carbon_intensity(lmp_data, btc, carbon_intensities)
+    
+    print("\nRegion Rankings (Best Profit/Carbon Ratio):")
+    print("-" * 80)
+    print(f"{'ISO':<8} {'Avg LMP':<12} {'Profit/TH/hr':<15} {'Carbon':<12} {'Profit/Carbon':<15}")
+    print(f"{'':8} {'($/MWh)':<12} {'($)':<15} {'(gCO2/MWh)':<12} {'($/kgCO2)':<15}")
+    print("-" * 80)
+    
+    for result in profit_carbon_results:
+        print(f"{result['iso']:<8} "
+              f"${result['avg_lmp']:>10.2f} "
+              f"${result['hourly_profit_per_th']:>13.4f} "
+              f"{result['carbon_intensity']:>11.0f} "
+              f"${result['profit_per_carbon']:>13.4f}")
+    
+    print("-" * 80)
+    print("\nKey Insights:")
+    best = profit_carbon_results[0] if profit_carbon_results else None
+    if best:
+        print(f"• Best profit/carbon ratio: {best['iso']} at ${best['profit_per_carbon']:.4f}/kgCO2")
+        print(f"• This means: For every kg of CO2 emitted, you earn ${best['profit_per_carbon']:.4f}")
+        
+    # Show unprofitable regions
+    unprofitable = [r for r in profit_carbon_results if not r['profitable']]
+    if unprofitable:
+        print(f"\n• Unprofitable regions: {', '.join([r['iso'] for r in unprofitable])}") 
