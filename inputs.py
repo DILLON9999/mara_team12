@@ -2,6 +2,9 @@ import requests
 from datetime import datetime, timedelta
 from gridstatusio import GridStatusClient
 
+MINER_WTH = 100
+
+# Dollar per megawatt-hour
 def get_cheapest_lmp(num_locations=5):
     """Get average and recent LMP prices from all major ISOs"""
     print("Fetching LMP data from all ISOs...")
@@ -102,6 +105,7 @@ def get_inference_competition_prices():
         'highest': max(prices.values())
     }
 
+
 def get_btc_hashprice():
     """Get current Bitcoin mining profitability (hashprice)"""
     try:
@@ -136,6 +140,39 @@ def get_btc_hashprice():
             'hashprice_per_th_day': 0.15
         }
 
+def calculate_hourly_mining_profit(lmp_per_mwh, hashprice_per_th_day, miner_efficiency_watts_per_th=MINER_WTH):
+    """
+    Calculate hourly profitability of BTC mining given LMP electricity costs
+    
+    Args:
+        lmp_per_mwh: Electricity price in $/MWh
+        hashprice_per_th_day: BTC mining revenue in $/TH/day  
+        miner_efficiency_watts_per_th: Power consumption in watts per TH/s (default: 100W/TH but can change)
+    
+    Returns:
+        dict with hourly profit/loss per TH
+    """
+    # Convert LMP from $/MWh to $/kWh
+    lmp_per_kwh = lmp_per_mwh / 1000
+    
+    # Convert hashprice from daily to hourly
+    hashprice_per_th_hour = hashprice_per_th_day / 24
+    
+    # Calculate hourly electricity cost per TH
+    # miner_efficiency_watts_per_th / 1000 = kW per TH
+    electricity_cost_per_th_hour = (miner_efficiency_watts_per_th / 1000) * lmp_per_kwh
+    
+    # Calculate net hourly profit per TH
+    hourly_profit_per_th = hashprice_per_th_hour - electricity_cost_per_th_hour
+    
+    return {
+        'hourly_revenue_per_th': round(hashprice_per_th_hour, 4),
+        'hourly_electricity_cost_per_th': round(electricity_cost_per_th_hour, 4),
+        'hourly_profit_per_th': round(hourly_profit_per_th, 4),
+        'lmp_per_kwh': round(lmp_per_kwh, 4),
+        'miner_watts_per_th': miner_efficiency_watts_per_th
+    }
+
 # Quick test script
 if __name__ == "__main__":
     print("=== CHEAPEST ENERGY LOCATIONS BY ISO ===")
@@ -161,4 +198,23 @@ if __name__ == "__main__":
     print("\n=== BITCOIN MINING ===")
     btc = get_btc_hashprice()
     print(f"BTC Price: ${btc['btc_price']:,.0f}")
-    print(f"Hashprice: ${btc['hashprice_per_th_day']:.3f}/TH/day") 
+    print(f"Hashprice: ${btc['hashprice_per_th_day']:.3f}/TH/day")
+    
+    # Example: Calculate profitability for cheapest average region
+    print("\n=== MINING PROFITABILITY EXAMPLE ===")
+    # Find the ISO with the cheapest average LMP
+    cheapest_avg_lmp = float('inf')
+    cheapest_iso = None
+    for iso_name, iso_data in lmp_data.items():
+        if 'error' not in iso_data and 'average_lmp' in iso_data:
+            if iso_data['average_lmp'] < cheapest_avg_lmp:
+                cheapest_avg_lmp = iso_data['average_lmp']
+                cheapest_iso = iso_name
+    
+    if cheapest_iso:
+        profit = calculate_hourly_mining_profit(cheapest_avg_lmp, btc['hashprice_per_th_day'])
+        print(f"Using cheapest average region: ${cheapest_avg_lmp}/MWh from {cheapest_iso.upper()}")
+        print(f"Hourly revenue per TH: ${profit['hourly_revenue_per_th']}")
+        print(f"Hourly electricity cost per TH: ${profit['hourly_electricity_cost_per_th']}")
+        print(f"Hourly profit per TH: ${profit['hourly_profit_per_th']}")
+        print(f"Profitable: {'Yes' if profit['hourly_profit_per_th'] > 0 else 'No'}") 
