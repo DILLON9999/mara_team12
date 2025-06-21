@@ -1,0 +1,110 @@
+market_analysis_task:
+  description: >
+    Analyze real-time energy markets across all ISOs to identify the most economical locations
+    for Bitcoin mining. Fetch current LMP (Locational Marginal Pricing) data, Bitcoin hashprice,
+    and calculate basic profitability metrics for each region. Pay special attention to negative
+    pricing events and extreme price variations.
+  expected_output: >
+    A comprehensive market analysis containing:
+    - Current LMP prices for all ISOs with averages and ranges
+    - Bitcoin price and hashprice metrics
+    - Initial profitability calculations per region
+    - Identification of negative pricing opportunities
+    - Market trend analysis for the last hour
+  agent: market_intelligence_agent
+
+carbon_assessment_task:
+  description: >
+    Evaluate the carbon intensity of each ISO's power grid based on current fuel mix.
+    Calculate the carbon footprint per MWh for each region and identify the cleanest
+    energy sources currently available. Consider renewable energy percentages and
+    grid emissions factors.
+  expected_output: >
+    A detailed environmental assessment including:
+    - Carbon intensity (gCO2/MWh) for each ISO
+    - Current fuel mix breakdown by region
+    - Ranking of regions by clean energy percentage
+    - Environmental risk factors and ESG considerations
+  agent: environmental_analyst
+
+optimization_decision_task:
+  description: >
+    Synthesize market and environmental data to determine optimal mining strategies.
+    Calculate profit per carbon ratios for each region and recommend specific actions
+    including location selection, mining intensity, and timing. Consider both immediate
+    opportunities and sustainable long-term strategies. Use the hardware scout's findings
+    to incorporate any efficiency improvements into profitability calculations. Current
+    baseline miner efficiency: {miner_efficiency} W/TH.
+  expected_output: >
+    Strategic recommendations containing:
+    - Ranked list of regions by profit/carbon efficiency
+    - Specific mining location recommendations
+    - Suggested mining intensity levels (0-100%)
+    - Timing recommendations for next 24 hours
+    - Risk assessment and mitigation strategies
+    - Hardware efficiency considerations and updated calculations if applicable
+  agent: optimization_strategist
+  context:
+    - market_analysis_task
+    - carbon_assessment_task
+    - hardware_scout_task
+
+dashboard_update_task:
+  description: >
+    Format and publish all insights to the monitoring dashboard. Create clear visualizations
+    of profit/carbon ratios, generate alerts for exceptional opportunities (like negative pricing),
+    and update all relevant metrics. Include any hardware upgrade recommendations and carbon
+    credit opportunities. Ensure data is presented in an executive-friendly format.
+  expected_output: >
+    Dashboard update package including:
+    - Formatted JSON data for API endpoints
+    - Alert notifications for significant events
+    - Executive summary of current mining status
+    - Visual representation of profit/carbon rankings
+    - Hardware upgrade recommendations if applicable
+    - Carbon credit arbitrage opportunities
+    - Timestamp and data quality indicators
+  agent: dashboard_publisher
+  context:
+    - market_analysis_task
+    - carbon_assessment_task
+    - optimization_decision_task
+    - hardware_scout_task
+    - carbon_arbitrage_task
+
+hardware_scout_task:
+  description: >
+    Scan the latest Bitcoin mining hardware announcements, specifications, and vendor releases
+    to identify any new ASIC miners that offer better energy efficiency than the current
+    {miner_efficiency} W/TH standard. Focus on reputable manufacturers like Bitmain, MicroBT,
+    Canaan, and analyze their latest models for potential efficiency gains. If a significant
+    improvement (≥5%) is found, recommend updating the MINER_WTH baseline for all subsequent
+    profitability calculations.
+  expected_output: >
+    A JSON report following this exact schema:
+    {
+      "update": "<yes|no>",
+      "report": "<short persuasive paragraph explaining the model, sources and % power saving>",
+      "MINER_WTH": <float>,
+      "efficiency_improvement_percent": <float>
+    }
+  agent: hardware_scout
+
+carbon_arbitrage_task:
+  description: >
+    Analyze the latest carbon credit market prices and policy developments to determine if
+    mining in cleaner regions could generate additional revenue through carbon credits or
+    regulatory incentives. Review the optimization strategy results and assess whether
+    reallocating hashrate to lower-carbon regions would improve overall profitability
+    when carbon credits are factored in. Consider any hardware efficiency improvements
+    from the hardware scout that might affect carbon calculations.
+  expected_output: >
+    A concise advisory paragraph (≤120 words) recommending any carbon-credit driven
+    strategy adjustments, followed by a list of carbon_events tracking notable
+    market developments and their projected revenue impact. Include assessment of
+    how carbon credit opportunities might change the final mining recommendations.
+  agent: carbon_arbitrageur
+  context:
+    - optimization_decision_task
+    - carbon_assessment_task
+    - hardware_scout_task

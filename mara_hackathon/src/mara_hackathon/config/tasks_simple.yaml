@@ -1,0 +1,47 @@
+market_analysis_task:
+  description: >
+    Analyze real-time energy markets across all ISOs to identify the most economical locations
+    for Bitcoin mining. Fetch current LMP (Locational Marginal Pricing) data, Bitcoin hashprice,
+    and calculate basic profitability metrics for each region.
+  expected_output: >
+    A comprehensive market analysis containing:
+    - Current LMP prices for all ISOs with averages and ranges
+    - Bitcoin price and hashprice metrics
+    - Initial profitability calculations per region
+  agent: market_intelligence_agent
+
+carbon_assessment_task:
+  description: >
+    Evaluate the carbon intensity of each ISO's power grid based on current fuel mix.
+    Calculate the carbon footprint per MWh for each region.
+  expected_output: >
+    A detailed environmental assessment including:
+    - Carbon intensity (gCO2/MWh) for each ISO
+    - Current fuel mix breakdown by region
+  agent: environmental_analyst
+
+optimization_decision_task:
+  description: >
+    Synthesize market and environmental data to determine optimal mining strategies.
+    Calculate profit per carbon ratios for each region and recommend specific actions.
+  expected_output: >
+    Strategic recommendations containing:
+    - Ranked list of regions by profit/carbon efficiency
+    - Specific mining location recommendations
+  agent: optimization_strategist
+  context:
+    - market_analysis_task
+    - carbon_assessment_task
+
+dashboard_update_task:
+  description: >
+    Format and publish all insights to the monitoring dashboard.
+  expected_output: >
+    Dashboard update package including:
+    - Formatted JSON data for API endpoints
+    - Alert notifications for significant events
+  agent: dashboard_publisher
+  context:
+    - market_analysis_task
+    - carbon_assessment_task
+    - optimization_decision_task 
