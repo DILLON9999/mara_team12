@@ -1,6 +1,6 @@
 {
-  "update": "yes",
-  "report": "The WhatsMiner M56S++ by MicroBT offers a groundbreaking efficiency of 22 W/TH, representing a 78% improvement over the current 100 W/TH standard. This model utilizes an innovative chip design to achieve unparalleled power savings, confirmed by MicroBT's official press release.",
-  "MINER_WTH": 22.0,
-  "efficiency_improvement_percent": 78.0
+  "update": "no",
+  "report": "No significant hardware improvements found in recent announcements. Current 100 W/TH remains optimal.",
+  "MINER_WTH": 100.0,
+  "efficiency_improvement_percent": 0.0
 }

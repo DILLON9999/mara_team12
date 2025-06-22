@@ -16,11 +16,24 @@ import pandas as pd
 
 # Add parent directory to path to import inputs module
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from inputs import (
-    get_cheapest_lmp, get_inference_competition_prices, get_btc_hashprice,
-    get_carbon_intensity_by_iso, calculate_profit_per_carbon_intensity,
-    calculate_hourly_mining_profit, MINER_WTH
-)
+
+# Try to import real data functions, fall back to demo data
+try:
+    from inputs import (
+        get_cheapest_lmp, get_inference_competition_prices, get_btc_hashprice,
+        get_carbon_intensity_by_iso, calculate_profit_per_carbon_intensity,
+        calculate_hourly_mining_profit, MINER_WTH
+    )
+    USE_REAL_DATA = True
+except ImportError as e:
+    print(f"⚠️  Cannot import real data functions: {e}")
+    print("🎭 Falling back to demo data mode")
+    from demo_data import (
+        generate_demo_lmp_data, generate_demo_btc_data, generate_demo_carbon_data,
+        generate_demo_inference_prices, calculate_demo_profit_analysis
+    )
+    USE_REAL_DATA = False
+    MINER_WTH = 100
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'mara_hackathon_dashboard'
@@ -87,53 +100,68 @@ def fetch_live_data():
         dashboard_state['agents_status']['market_intelligence']['status'] = 'running'
         socketio.emit('agent_status_update', dashboard_state['agents_status'])
         
-        # Fetch LMP data  
-        print("Fetching LMP data...")
-        lmp_data = get_cheapest_lmp(5)
+        if USE_REAL_DATA:
+            # Fetch real data
+            print("Fetching real LMP data...")
+            lmp_data = get_cheapest_lmp(5)
+            
+            print("Fetching BTC hashprice...")
+            btc_data = get_btc_hashprice()
+            
+            print("Fetching carbon intensity...")
+            carbon_data = get_carbon_intensity_by_iso()
+            
+            print("Fetching inference competition prices...")
+            inference_prices = get_inference_competition_prices()
+            
+            print("Calculating profit optimization...")
+            profit_analysis = calculate_profit_per_carbon_intensity(
+                lmp_data, btc_data, carbon_data, dashboard_state['current_miner_wth']
+            )
+        else:
+            # Use demo data
+            print("🎭 Generating demo data...")
+            lmp_data = generate_demo_lmp_data()
+            btc_data = generate_demo_btc_data()
+            carbon_data = generate_demo_carbon_data()
+            inference_prices = generate_demo_inference_prices()
+            profit_analysis = calculate_demo_profit_analysis(
+                lmp_data, btc_data, carbon_data, dashboard_state['current_miner_wth']
+            )
+        
+        # Store data
         dashboard_state['live_data']['lmp_data'] = lmp_data
+        dashboard_state['live_data']['btc_data'] = btc_data
+        dashboard_state['live_data']['carbon_data'] = carbon_data
+        dashboard_state['live_data']['inference_prices'] = inference_prices
+        dashboard_state['live_data']['profit_analysis'] = profit_analysis
+        
+        # Update agent statuses
         dashboard_state['agents_status']['market_intelligence'] = {
             'status': 'completed',
             'last_run': datetime.now().isoformat(),
-            'data': f"Fetched data from {len(lmp_data)} ISOs"
+            'data': f"Fetched data from {len(lmp_data)} ISOs {'(DEMO)' if not USE_REAL_DATA else ''}"
         }
-        
-        # Fetch BTC data
-        print("Fetching BTC hashprice...")
-        btc_data = get_btc_hashprice()
-        dashboard_state['live_data']['btc_data'] = btc_data
         
         # Environmental analysis
         dashboard_state['agents_status']['environmental_analyst']['status'] = 'running'
         socketio.emit('agent_status_update', dashboard_state['agents_status'])
         
-        print("Fetching carbon intensity...")
-        carbon_data = get_carbon_intensity_by_iso()
-        dashboard_state['live_data']['carbon_data'] = carbon_data
         dashboard_state['agents_status']['environmental_analyst'] = {
             'status': 'completed',
             'last_run': datetime.now().isoformat(),
-            'data': f"Analyzed {len(carbon_data)} regions"
+            'data': f"Analyzed {len(carbon_data)} regions {'(DEMO)' if not USE_REAL_DATA else ''}"
         }
         
         # Optimization analysis
         dashboard_state['agents_status']['optimization_strategist']['status'] = 'running'
         socketio.emit('agent_status_update', dashboard_state['agents_status'])
         
-        print("Calculating profit optimization...")
-        profit_analysis = calculate_profit_per_carbon_intensity(
-            lmp_data, btc_data, carbon_data, dashboard_state['current_miner_wth']
-        )
-        dashboard_state['live_data']['profit_analysis'] = profit_analysis
         dashboard_state['agents_status']['optimization_strategist'] = {
             'status': 'completed',
             'last_run': datetime.now().isoformat(),
-            'data': f"Optimized {len(profit_analysis)} mining locations"
+            'data': f"Optimized {len(profit_analysis)} mining locations {'(DEMO)' if not USE_REAL_DATA else ''}"
         }
-        
-        # Inference prices
-        print("Fetching inference competition prices...")
-        inference_prices = get_inference_competition_prices()
-        dashboard_state['live_data']['inference_prices'] = inference_prices
         
         dashboard_state['last_update'] = datetime.now().isoformat()
         
