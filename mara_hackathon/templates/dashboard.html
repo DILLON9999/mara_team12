@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ MARA Mining Optimization Dashboard</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+        }
+        
+        .dashboard-header {
+            background: rgba(0,0,0,0.2);
+            backdrop-filter: blur(10px);
+            padding: 20px 0;
+            margin-bottom: 30px;
+            border-bottom: 2px solid rgba(255,215,0,0.3);
+        }
+        
+        .agent-status-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .agent-status-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        .status-idle { border-left: 5px solid #6c757d; }
+        .status-running { border-left: 5px solid #ffc107; animation: pulse 2s infinite; }
+        .status-completed { border-left: 5px solid #28a745; }
+        .status-error { border-left: 5px solid #dc3545; }
+        
+        @keyframes pulse {
+            0% { border-left-color: #ffc107; }
+            50% { border-left-color: #ffed4e; }
+            100% { border-left-color: #ffc107; }
+        }
+        
+        .metric-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #ffd700;
+        }
+        
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-top: 10px;
+        }
+        
+        .chart-container {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .profit-table {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .profit-table th {
+            background: rgba(255,215,0,0.2);
+            border: none;
+            color: #ffd700;
+            font-weight: bold;
+        }
+        
+        .profit-table td {
+            border: none;
+            color: white;
+        }
+        
+        .profit-positive { color: #28a745; font-weight: bold; }
+        .profit-negative { color: #dc3545; font-weight: bold; }
+        
+        .update-time {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 15px;
+            border-radius: 25px;
+            font-size: 0.9rem;
+        }
+        
+        .refresh-btn {
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            color: #1e3c72;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .refresh-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 5px 20px rgba(255,215,0,0.4);
+        }
+        
+        .hardware-alert {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            border: none;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .workflow-diagram {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .workflow-step {
+            text-align: center;
+            flex: 1;
+            padding: 10px;
+        }
+        
+        .workflow-arrow {
+            color: #ffd700;
+            font-size: 1.5rem;
+        }
+        
+        .log-container {
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-left: 3px solid #ffd700;
+            padding-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="update-time" id="lastUpdate">
+        <i class="fas fa-clock"></i> Last Update: Never
+    </div>
+
+    <div class="dashboard-header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1><i class="fas fa-bolt"></i> MARA Mining Optimization Dashboard</h1>
+                    <p class="mb-0">Real-time Bitcoin Mining Intelligence & Carbon Optimization</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button class="refresh-btn" onclick="refreshData()">
+                        <i class="fas fa-sync-alt"></i> Refresh Data
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+        <!-- Agent Workflow Status -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3><i class="fas fa-robot"></i> Agent Workflow Status</h3>
+                <div class="workflow-diagram">
+                    <div class="workflow-step">
+                        <div class="agent-status-indicator" id="market-intelligence-indicator">
+                            <i class="fas fa-chart-line fa-2x"></i>
+                        </div>
+                        <div>Market Intelligence</div>
+                    </div>
+                    <div class="workflow-arrow"><i class="fas fa-arrow-right"></i></div>
+                    <div class="workflow-step">
+                        <div class="agent-status-indicator" id="environmental-analyst-indicator">
+                            <i class="fas fa-leaf fa-2x"></i>
+                        </div>
+                        <div>Environmental Analyst</div>
+                    </div>
+                    <div class="workflow-arrow"><i class="fas fa-arrow-right"></i></div>
+                    <div class="workflow-step">
+                        <div class="agent-status-indicator" id="hardware-scout-indicator">
+                            <i class="fas fa-microchip fa-2x"></i>
+                        </div>
+                        <div>Hardware Scout</div>
+                    </div>
+                    <div class="workflow-arrow"><i class="fas fa-arrow-right"></i></div>
+                    <div class="workflow-step">
+                        <div class="agent-status-indicator" id="optimization-strategist-indicator">
+                            <i class="fas fa-brain fa-2x"></i>
+                        </div>
+                        <div>Optimization Strategist</div>
+                    </div>
+                    <div class="workflow-arrow"><i class="fas fa-arrow-right"></i></div>
+                    <div class="workflow-step">
+                        <div class="agent-status-indicator" id="carbon-arbitrageur-indicator">
+                            <i class="fas fa-coins fa-2x"></i>
+                        </div>
+                        <div>Carbon Arbitrageur</div>
+                    </div>
+                    <div class="workflow-arrow"><i class="fas fa-arrow-right"></i></div>
+                    <div class="workflow-step">
+                        <div class="agent-status-indicator" id="dashboard-publisher-indicator">
+                            <i class="fas fa-dashboard fa-2x"></i>
+                        </div>
+                        <div>Dashboard Publisher</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Key Metrics -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <div class="metric-value" id="btc-price">$0</div>
+                    <div class="metric-label">BTC Price</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <div class="metric-value" id="hashprice">$0.000</div>
+                    <div class="metric-label">Hashprice ($/TH/day)</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <div class="metric-value" id="current-efficiency">100</div>
+                    <div class="metric-label">Current Miner Efficiency (W/TH)</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <div class="metric-value" id="best-profit-carbon">$0.0000</div>
+                    <div class="metric-label">Best Profit/Carbon ($/kgCO2)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hardware Update Alert -->
+        <div id="hardware-alert" class="hardware-alert" style="display: none;">
+            <div class="row align-items-center">
+                <div class="col-md-1">
+                    <i class="fas fa-microchip fa-3x"></i>
+                </div>
+                <div class="col-md-11">
+                    <h4>🚀 Hardware Update Available!</h4>
+                    <p id="hardware-update-text" class="mb-0"></p>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Charts Column -->
+            <div class="col-md-8">
+                <!-- LMP Prices Chart -->
+                <div class="chart-container">
+                    <h4><i class="fas fa-chart-bar"></i> Energy Prices by ISO ($/MWh)</h4>
+                    <canvas id="lmpChart" width="400" height="200"></canvas>
+                </div>
+
+                <!-- Carbon Intensity Chart -->
+                <div class="chart-container">
+                    <h4><i class="fas fa-leaf"></i> Carbon Intensity by Region (gCO2/MWh)</h4>
+                    <canvas id="carbonChart" width="400" height="200"></canvas>
+                </div>
+
+                <!-- Profit Analysis Table -->
+                <div class="chart-container">
+                    <h4><i class="fas fa-calculator"></i> Mining Profit Analysis</h4>
+                    <div class="table-responsive">
+                        <table class="table profit-table">
+                            <thead>
+                                <tr>
+                                    <th>ISO</th>
+                                    <th>Avg LMP ($/MWh)</th>
+                                    <th>Profit/TH/hr ($)</th>
+                                    <th>Carbon (gCO2/MWh)</th>
+                                    <th>Profit/Carbon ($/kgCO2)</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="profit-table-body">
+                                <tr>
+                                    <td colspan="6" class="text-center">Loading data...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent Status & Logs Column -->
+            <div class="col-md-4">
+                <!-- Agent Status Cards -->
+                <div id="agent-status-cards">
+                    <!-- Cards will be dynamically generated -->
+                </div>
+
+                <!-- Activity Log -->
+                <div class="chart-container">
+                    <h4><i class="fas fa-terminal"></i> Activity Log</h4>
+                    <div class="log-container" id="activity-log">
+                        <div class="log-entry">System initializing...</div>
+                    </div>
+                </div>
+
+                <!-- Mining Report -->
+                <div class="chart-container" id="mining-report-section" style="display: none;">
+                    <h4><i class="fas fa-file-alt"></i> Latest Mining Report</h4>
+                    <div id="mining-report-content" class="p-3" style="background: rgba(0,0,0,0.2); border-radius: 10px; font-size: 0.9rem;">
+                        No report available
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Socket.IO connection
+        const socket = io();
+        
+        // Chart instances
+        let lmpChart, carbonChart;
+        
+        // Activity log
+        const activityLog = document.getElementById('activity-log');
+        
+        function addLogEntry(message) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span style="color: #ffd700;">[${new Date().toLocaleTimeString()}]</span> ${message}`;
+            activityLog.appendChild(entry);
+            activityLog.scrollTop = activityLog.scrollHeight;
+            
+            // Keep only last 50 entries
+            if (activityLog.children.length > 50) {
+                activityLog.removeChild(activityLog.firstChild);
+            }
+        }
+        
+        // Initialize charts
+        function initCharts() {
+            const lmpCtx = document.getElementById('lmpChart').getContext('2d');
+            lmpChart = new Chart(lmpCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Average LMP ($/MWh)',
+                        data: [],
+                        backgroundColor: 'rgba(255, 215, 0, 0.6)',
+                        borderColor: 'rgba(255, 215, 0, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { labels: { color: 'white' } }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            ticks: { color: 'white' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        },
+                        x: { 
+                            ticks: { color: 'white' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        }
+                    }
+                }
+            });
+            
+            const carbonCtx = document.getElementById('carbonChart').getContext('2d');
+            carbonChart = new Chart(carbonCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Carbon Intensity (gCO2/MWh)',
+                        data: [],
+                        backgroundColor: 'rgba(40, 167, 69, 0.6)',
+                        borderColor: 'rgba(40, 167, 69, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { labels: { color: 'white' } }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            ticks: { color: 'white' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        },
+                        x: { 
+                            ticks: { color: 'white' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update dashboard with new data
+        function updateDashboard(data) {
+            console.log('Updating dashboard with data:', data);
+            
+            // Update last update time
+            if (data.last_update) {
+                document.getElementById('lastUpdate').innerHTML = 
+                    `<i class="fas fa-clock"></i> Last Update: ${new Date(data.last_update).toLocaleString()}`;
+            }
+            
+            // Update key metrics
+            if (data.live_data?.btc_data) {
+                document.getElementById('btc-price').textContent = `$${data.live_data.btc_data.btc_price.toLocaleString()}`;
+                document.getElementById('hashprice').textContent = `$${data.live_data.btc_data.hashprice_per_th_day.toFixed(3)}`;
+            }
+            
+            document.getElementById('current-efficiency').textContent = data.current_miner_wth || 100;
+            
+            // Update best profit/carbon ratio
+            if (data.live_data?.profit_analysis && data.live_data.profit_analysis.length > 0) {
+                const bestRatio = data.live_data.profit_analysis[0].profit_per_carbon;
+                document.getElementById('best-profit-carbon').textContent = `$${bestRatio.toFixed(4)}`;
+            }
+            
+            // Update hardware alert
+            if (data.hardware_update && data.hardware_update.update === 'yes') {
+                document.getElementById('hardware-alert').style.display = 'block';
+                document.getElementById('hardware-update-text').textContent = data.hardware_update.report;
+            }
+            
+            // Update charts
+            updateCharts(data);
+            
+            // Update agent status
+            updateAgentStatus(data.agents_status);
+            
+            // Update profit table
+            updateProfitTable(data.live_data?.profit_analysis);
+            
+            // Update mining report
+            if (data.mining_report) {
+                document.getElementById('mining-report-section').style.display = 'block';
+                document.getElementById('mining-report-content').textContent = 
+                    data.mining_report.message || JSON.stringify(data.mining_report, null, 2);
+            }
+        }
+        
+        // Update charts with new data
+        function updateCharts(data) {
+            if (data.live_data?.lmp_data && lmpChart) {
+                const labels = [];
+                const lmpData = [];
+                
+                for (const [iso, isoData] of Object.entries(data.live_data.lmp_data)) {
+                    if (isoData.average_lmp !== undefined) {
+                        labels.push(iso.toUpperCase());
+                        lmpData.push(isoData.average_lmp);
+                    }
+                }
+                
+                lmpChart.data.labels = labels;
+                lmpChart.data.datasets[0].data = lmpData;
+                lmpChart.update();
+            }
+            
+            if (data.live_data?.carbon_data && carbonChart) {
+                const labels = [];
+                const carbonData = [];
+                
+                for (const [region, intensity] of Object.entries(data.live_data.carbon_data)) {
+                    if (intensity !== null) {
+                        labels.push(region.toUpperCase());
+                        carbonData.push(intensity);
+                    }
+                }
+                
+                carbonChart.data.labels = labels;
+                carbonChart.data.datasets[0].data = carbonData;
+                carbonChart.update();
+            }
+        }
+        
+        // Update agent status indicators and cards
+        function updateAgentStatus(agentsStatus) {
+            const statusContainer = document.getElementById('agent-status-cards');
+            statusContainer.innerHTML = '';
+            
+            for (const [agentName, status] of Object.entries(agentsStatus)) {
+                // Update workflow indicator
+                const indicator = document.getElementById(`${agentName.replace('_', '-')}-indicator`);
+                if (indicator) {
+                    indicator.className = `agent-status-indicator status-${status.status}`;
+                }
+                
+                // Create status card
+                const card = document.createElement('div');
+                card.className = `agent-status-card status-${status.status}`;
+                card.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">${agentName.replace('_', ' ').toUpperCase()}</h6>
+                            <small class="text-muted">${status.status.toUpperCase()}</small>
+                        </div>
+                        <div class="text-end">
+                            <i class="fas fa-circle" style="color: ${getStatusColor(status.status)}"></i>
+                        </div>
+                    </div>
+                    ${status.data ? `<div class="mt-2"><small>${status.data}</small></div>` : ''}
+                    ${status.last_run ? `<div class="mt-1"><small>Last run: ${new Date(status.last_run).toLocaleString()}</small></div>` : ''}
+                `;
+                statusContainer.appendChild(card);
+            }
+        }
+        
+        // Update profit analysis table
+        function updateProfitTable(profitAnalysis) {
+            const tbody = document.getElementById('profit-table-body');
+            
+            if (!profitAnalysis || profitAnalysis.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center">No data available</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            profitAnalysis.forEach(row => {
+                const tr = document.createElement('tr');
+                const profitClass = row.hourly_profit_per_th > 0 ? 'profit-positive' : 'profit-negative';
+                const statusIcon = row.profitable ? '<i class="fas fa-check-circle text-success"></i>' : '<i class="fas fa-times-circle text-danger"></i>';
+                
+                tr.innerHTML = `
+                    <td><strong>${row.iso}</strong></td>
+                    <td>$${row.avg_lmp.toFixed(2)}</td>
+                    <td class="${profitClass}">$${row.hourly_profit_per_th.toFixed(4)}</td>
+                    <td>${row.carbon_intensity}</td>
+                    <td><strong>$${row.profit_per_carbon.toFixed(4)}</strong></td>
+                    <td>${statusIcon}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        
+        // Helper function to get status color
+        function getStatusColor(status) {
+            switch(status) {
+                case 'idle': return '#6c757d';
+                case 'running': return '#ffc107';
+                case 'completed': return '#28a745';
+                case 'error': return '#dc3545';
+                default: return '#6c757d';
+            }
+        }
+        
+        // Refresh data manually
+        function refreshData() {
+            addLogEntry('Manual refresh requested');
+            socket.emit('request_refresh');
+        }
+        
+        // Socket event handlers
+        socket.on('connect', function() {
+            addLogEntry('Connected to server');
+        });
+        
+        socket.on('disconnect', function() {
+            addLogEntry('Disconnected from server');
+        });
+        
+        socket.on('data_update', function(data) {
+            addLogEntry('Data updated from server');
+            updateDashboard(data);
+        });
+        
+        socket.on('agent_status_update', function(status) {
+            updateAgentStatus(status);
+        });
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initCharts();
+            addLogEntry('Dashboard initialized');
+        });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html> 
