@@ -3,7 +3,11 @@ import time
 import csv
 import datetime
 import pandas as pd
-from gridstatus import Ercot, SPP, NYISO, ISONE, IESO
+from gridstatus import Ercot, SPP, NYISO, ISONE
+try:
+    from gridstatus import IESO
+except ImportError:
+    IESO = None
 import ssl
 import urllib.request
 
@@ -22,9 +26,12 @@ isos = {
     "ercot": Ercot(),
     "spp": SPP(),
     "nyiso": NYISO(),
-    "isone": ISONE(),
-    "ieso": IESO()
+    "isone": ISONE()
 }
+
+# Add IESO if available
+if IESO is not None:
+    isos["ieso"] = IESO()
 
 def fetch_fuel_mix(region_obj, region_name):
     try:

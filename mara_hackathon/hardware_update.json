@@ -1,6 +1,8 @@
+```json
 {
   "update": "yes",
-  "report": "The WhatsMiner M56S++ offers a groundbreaking 78% improvement in energy efficiency over the conventional 100 W/TH standard. Announced in a MicroBT press release, this model achieves an unprecedented 22 W/TH through advanced chip design, making it the most compelling upgrade option available.",
+  "report": "The WhatsMiner M56S++ offers an exceptional 78% increase in energy efficiency with just 22 W/TH compared to the current 100 W/TH benchmark. According to MicroBT, this model's ultra-efficient chip design positions it as a groundbreaking option for reducing operational costs significantly. Meanwhile, the Antminer S21 XP Hydro provides a 15% improvement with 85 W/TH. Bitmain's innovative liquid cooling technology makes this a solid choice for miners seeking to upgrade their rigs.",
   "MINER_WTH": 22.0,
   "efficiency_improvement_percent": 78.0
 }
+```

@@ -2,7 +2,12 @@ import requests
 from datetime import datetime, timedelta
 from gridstatusio import GridStatusClient
 import pandas as pd
-from gridstatus import Ercot, SPP, NYISO, ISONE, IESO
+from gridstatus import Ercot, SPP, NYISO, ISONE
+try:
+    from gridstatus import IESO
+except ImportError:
+    # IESO might not be available in this version
+    IESO = None
 
 MINER_WTH = 100
 
@@ -195,9 +200,12 @@ def get_carbon_intensity_by_iso():
         "ercot": Ercot(),
         "spp": SPP(),
         "nyiso": NYISO(),
-        "isone": ISONE(),
-        "ieso": IESO()
+        "isone": ISONE()
     }
+    
+    # Add IESO if available
+    if IESO is not None:
+        isos["ieso"] = IESO()
     
     carbon_intensities = {}
     
@@ -215,28 +223,68 @@ def get_carbon_intensity_by_iso():
                 total_gen = 0
                 total_emissions = 0
                 
+                # Define columns to exclude (timestamp/datetime columns)
+                exclude_cols = ['Time', 'time', 'datetime', 'interval_start', 'interval_end', 
+                               'interval_start_utc', 'interval_end_utc', 'publish_time', 
+                               'timestamp', 'date', 'hour']
+                
                 for col in df.columns:
-                    if col not in ['Time', 'time', 'datetime', 'interval_start', 'interval_end']:
-                        fuel_type = col.lower()
-                        value = float(latest_row[col]) if pd.notna(latest_row[col]) else 0
-                        
-                        # Map fuel type to carbon factor
-                        emission_factor = CARBON_FACTORS.get(fuel_type, 300)
-                        
-                        total_gen += value
-                        total_emissions += emission_factor * value
+                    if col not in exclude_cols:
+                        try:
+                            # Check if the value can be converted to float
+                            raw_value = latest_row[col]
+                            if pd.notna(raw_value):
+                                # Try to convert to numeric, skip if it's a timestamp/string
+                                if isinstance(raw_value, (int, float)):
+                                    value = float(raw_value)
+                                elif isinstance(raw_value, str):
+                                    try:
+                                        value = float(raw_value)
+                                    except ValueError:
+                                        # Skip non-numeric strings
+                                        continue
+                                else:
+                                    # Skip datetime/timestamp objects
+                                    continue
+                            else:
+                                value = 0
+                            
+                            # Map fuel type to carbon factor
+                            fuel_type = col.lower()
+                            emission_factor = CARBON_FACTORS.get(fuel_type, 300)
+                            
+                            total_gen += value
+                            total_emissions += emission_factor * value
+                            
+                        except (ValueError, TypeError) as ve:
+                            # Skip columns that can't be converted to float
+                            continue
                 
                 # Calculate carbon intensity (gCO2/MWh)
-                carbon_intensity = round(total_emissions / total_gen, 2) if total_gen > 0 else 0
-                carbon_intensities[region_key] = carbon_intensity
-                print(f"  {region_key.upper()}: {carbon_intensity} gCO2/MWh")
+                if total_gen > 0:
+                    carbon_intensity = round(total_emissions / total_gen, 2)
+                    carbon_intensities[region_key] = carbon_intensity
+                    print(f"  {region_key.upper()}: {carbon_intensity} gCO2/MWh")
+                else:
+                    # Use default estimate if no valid generation data
+                    default_intensity = 500  # Average US grid intensity
+                    carbon_intensities[region_key] = default_intensity
+                    print(f"  {region_key.upper()}: {default_intensity} gCO2/MWh (estimated)")
             else:
                 carbon_intensities[region_key] = None
                 print(f"  {region_key.upper()}: No data available")
                 
         except Exception as e:
             print(f"  Error fetching {region_key}: {str(e)}")
-            carbon_intensities[region_key] = None
+            # Use default estimates for problematic regions
+            region_defaults = {
+                'ercot': 400,  # Texas grid (gas/wind mix)
+                'spp': 500,   # Midwest grid (coal/gas/wind mix)
+                'nyiso': 300, # NY grid (gas/hydro/nuclear mix)
+                'isone': 250  # New England grid (gas/nuclear/renewables)
+            }
+            carbon_intensities[region_key] = region_defaults.get(region_key, 500)
+            print(f"  {region_key.upper()}: {carbon_intensities[region_key]} gCO2/MWh (default estimate)")
     
     # Add estimates for CAISO, MISO, PJM (not available via gridstatus)
     carbon_intensities['caiso'] = 250  # California typically cleaner
@@ -245,16 +293,20 @@ def get_carbon_intensity_by_iso():
     
     return carbon_intensities
 
-def calculate_profit_per_carbon_intensity(lmp_data, btc_hashprice, carbon_intensities):
+def calculate_profit_per_carbon_intensity(lmp_data, btc_hashprice, carbon_intensities, custom_miner_wth=None):
     """Calculate profit per carbon intensity for each ISO region"""
     results = []
     
+    # Use custom miner efficiency if provided, otherwise use global MINER_WTH
+    miner_efficiency = custom_miner_wth if custom_miner_wth is not None else MINER_WTH
+    
     for iso_name, iso_data in lmp_data.items():
         if 'error' not in iso_data and 'average_lmp' in iso_data:
-            # Calculate mining profitability
+            # Calculate mining profitability with specified efficiency
             profit = calculate_hourly_mining_profit(
                 iso_data['average_lmp'], 
-                btc_hashprice['hashprice_per_th_day']
+                btc_hashprice['hashprice_per_th_day'],
+                miner_efficiency
             )
             
             # Get carbon intensity
@@ -270,7 +322,8 @@ def calculate_profit_per_carbon_intensity(lmp_data, btc_hashprice, carbon_intens
                     'hourly_profit_per_th': profit['hourly_profit_per_th'],
                     'carbon_intensity': carbon_intensity,
                     'profit_per_carbon': profit_per_carbon,
-                    'profitable': profit['hourly_profit_per_th'] > 0
+                    'profitable': profit['hourly_profit_per_th'] > 0,
+                    'miner_efficiency_wth': miner_efficiency
                 })
     
     # Sort by profit per carbon (descending)
