@@ -1,4 +1,4 @@
-# ⚡ MARA Bitcoin Mining Optimization System
+# ⚡ GreenHash - Group 12
 
 A sophisticated AI-powered system that optimizes Bitcoin mining operations across **3 critical dimensions**: **Profit**, **Carbon Footprint**, and **Hardware Efficiency**.
 
